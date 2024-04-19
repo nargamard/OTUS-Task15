@@ -1,0 +1,108 @@
+- name: PAM
+  hosts: all
+  become: yes
+  tasks:
+
+# Установим пакеты, которые будут нужны для установки docker
+  - name: install service-packeges
+    apt:
+      name: 
+        - curl
+        - software-properties-common
+        - ca-certificates
+        - apt-transport-https
+      state: present
+      update_cache: yes
+
+# Добавив GPG-key  
+  - name: add GPG-key
+    shell: wget -O- https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor | sudo tee /etc/apt/keyrings/docker.gpg > /dev/null
+
+# Добавим репозиторий Docker
+  - name: add Docker repo
+    shell: echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu jammy stable"| sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+# Установим Docker
+  - name: install docker-ce
+    apt:
+      name: docker-ce
+      state: present
+      update_cache: yes
+
+# Создадим группу "admin"
+  - name: Ensure group "admin" exists
+    group:
+      name: admin
+      state: present
+
+# Создадим пользователя "otus"
+  - name: Add the user 'otus'
+    user:
+      name: otus
+      password: 'Otus2024!'
+      shell: /bin/bash
+      groups: admin
+
+# Создадим пользователя "otusadm" 
+  - name: Add the user 'otusadm'
+    user:
+      name: otusadm
+      password: 'Otus2024!'
+      shell: /bin/bash
+      groups: admin
+
+# Добавим пользовтеля "root" в группу "admin"
+  - name: Add the user root to group 'admin'
+    user:
+      name: root
+      groups: admin
+      append: yes
+
+# Добавим пользовтеля "vagrant" в группу "admin"
+  - name: Add the user vagrant to group 'admin'
+    user:
+      name: vagrant
+      groups: admin
+      append: yes      
+
+# Добавим пользовтеля "otusadm" в группу "admin"
+  - name: Add the user otusadm to group 'docker'
+    user:
+      name: otusadm
+      groups: docker
+      append: yes    
+
+# Скопируем скрипт
+  - name: copy script
+    copy:
+      src: login.sh
+      dest: /usr/local/bin/login.sh
+      owner: root
+      group: root
+      mode: u=rwx,g=rx,o=rx
+
+# Добавим строку "auth required pam_exec.so debug /usr/local/bin/login.sh в конец файла /etc/pam.d/sshd
+  - name: configure PAM
+    lineinfile:
+      dest: /etc/pam.d/sshd
+      line: "auth required pam_exec.so debug /usr/local/bin/login.sh"
+
+# Перезапустим sshd
+  - name: reload sshd
+    systemd:
+      name: sshd
+      state: reloaded      
+
+# Разрешим пользователю "otus" пользоваться docker
+  - name: Allow systemctl docker to user 'otusadm'
+    community.general.sudoers:
+      name: allow-docker
+      user: otusadm
+      commands:
+        - /bin/systemctl restart docker
+        - /bin/systemctl reload docker
+        - /bin/systemctl start docker
+        - /bin/systemctl stop docker  
+        - /usr/bin/docker
+
+      nopassword: true
